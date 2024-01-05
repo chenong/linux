@@ -6120,6 +6120,7 @@ static void tcp_rcv_synrecv_state_fastopen(struct sock *sk)
  *	all states except ESTABLISHED and TIME_WAIT.
  *	It's called from both tcp_v4_rcv and tcp_v6_rcv and should be
  *	address independent.
+ *	return >= 1, 会发送 reset 报文
  */
 
 int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
@@ -6132,14 +6133,14 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 	bool acceptable;
 
 	switch (sk->sk_state) {
-	case TCP_CLOSE:
+	case TCP_CLOSE: // close 状态收到报文，直接丢弃
 		goto discard;
 
 	case TCP_LISTEN:
-		if (th->ack)
+		if (th->ack) // listen 状态收到 ack 报文，直接 reset
 			return 1;
 
-		if (th->rst)
+		if (th->rst) // listen 状态收到 rst 报文，直接丢弃
 			goto discard;
 
 		if (th->syn) {
@@ -6150,10 +6151,13 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 			 */
 			rcu_read_lock();
 			local_bh_disable();
+            // tcp_v4_conn_request
 			acceptable = icsk->icsk_af_ops->conn_request(sk, skb) >= 0;
 			local_bh_enable();
 			rcu_read_unlock();
 
+            /* If conn_request failed, we send RST. */
+            /* 没有处理 syn 报文，发送 reset */
 			if (!acceptable)
 				return 1;
 			consume_skb(skb);
